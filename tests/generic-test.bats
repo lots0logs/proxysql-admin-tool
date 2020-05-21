@@ -154,6 +154,38 @@ PROXYSQL_BASEDIR=$WORKDIR/proxysql-bin
     [ "$status" -eq 1 ]
 }
 
+@test 'run proxysql-admin --login-path-file with nonexistent file' {
+    run sudo $WORKDIR/proxysql-admin --login-path-file=dummy.file.should.not.exist.cnf
+    echo "$output" >&2
+    [ "$status" -eq 1 ]
+}
+
+@test 'run proxysql-admin --login-path=bad.path with valid login-path file' {
+    test_file=$(mktemp -p . -t login.path.test.XXX.cnf)
+    run sudo $WORKDIR/proxysql-admin --login-path-file=$test_file --proxysql-login-path=bar
+    rm -f "$test_file"
+    echo "$output" >&2
+    [ "$status" -eq 1 ]
+
+    test_file=$(mktemp -p . -t login.path.test.XXX.cnf)
+    run sudo $WORKDIR/proxysql-admin --login-path-file=$test_file --cluster-login-path=bar
+    rm -f "$test_file"
+    echo "$output" >&2
+    [ "$status" -eq 1 ]
+
+    test_file=$(mktemp -p . -t login.path.test.XXX.cnf)
+    run sudo $WORKDIR/proxysql-admin --login-path-file=$test_file --monitor-login-path=bar
+    rm -f "$test_file"
+    echo "$output" >&2
+    [ "$status" -eq 1 ]
+
+    test_file=$(mktemp -p . -t login.path.test.XXX.cnf)
+    run sudo $WORKDIR/proxysql-admin --login-path-file=$test_file --cluster-app-login-path=bar
+    rm -f "$test_file"
+    echo "$output" >&2
+    [ "$status" -eq 1 ]
+}
+
 @test "run proxysql-admin --version check" {
     admin_version=$(sudo $WORKDIR/proxysql-admin -v | grep --extended-regexp -oe '[1-9]\.[0-9]\.[0-9]+')
     proxysql_version=$(sudo $PROXYSQL_BASE/usr/bin/proxysql --help | grep --extended-regexp -oe '[1-9]\.[0-9]\.[0-9]+')

@@ -396,6 +396,8 @@ function cleanup_handler() {
       pkill -9 -x proxysql
     fi
   fi
+  echo "Removing $SCRIPT_DIR/test.tmp.d"
+  rm -rf "$SCRIPT_DIR/test.tmp.d"
 }
 
 #
@@ -412,6 +414,14 @@ if [[ -z $WORKDIR ]]; then
   echo "No valid parameters were passed. Need relative workdir setting. Retry."
   exit 1
 fi
+
+# Check for any dependencies
+if ! which expect >/dev/null; then
+  echo "Cannot find 'expect'"
+  echo "This is now a dependency. ('apt install expect' or 'yum install expect')"
+  exit 1
+fi
+
 trap cleanup_handler EXIT
 
 if [[ $USE_IPVERSION == "v4" ]]; then
@@ -494,6 +504,7 @@ fi
 export PATH="$WORKDIR/$PXCBASE/bin:$PATH"
 export PXC_BASEDIR="${WORKDIR}/$PXCBASE"
 
+
 echo "Looking for mysql client..."
 if [[ ! -e $PXC_BASEDIR/bin/mysql ]] ;then
   echo "ERROR! Could not find the mysql client"
@@ -509,6 +520,9 @@ if [[ ! -r /etc/proxysql.cnf ]]; then
   echo "This is for TEST purposes and should not be done in PRODUCTION."
   exit 1
 fi
+
+echo "Copying over proxysql to /usr/bin"
+sudo cp $PROXYSQL_BASE/usr/bin/* /usr/bin/
 
 if [[ ! -x $PROXYSQL_BASE/usr/bin/proxysql ]]; then
   echo "ERROR! Could not find proxysql executable : $PROXYSQL_BASE/usr/bin/proxysql"
@@ -584,9 +598,6 @@ sudo cp $PROXYSQL_BASE/etc/proxysql-admin.cnf /etc/proxysql-admin.cnf
 sudo chown $OS_USER:$OS_USER /etc/proxysql-admin.cnf
 sudo sed -i "s|\/var\/lib\/proxysql|$PROXYSQL_BASE|" /etc/proxysql-admin.cnf
 
-echo "Copying over proxysql to /usr/bin"
-sudo cp $PROXYSQL_BASE/usr/bin/* /usr/bin/
-
 if [[ ! -e $(sudo which bats 2> /dev/null) ]] ;then
   pushd $ROOT_FS
   git clone https://github.com/sstephenson/bats
@@ -605,10 +616,112 @@ sudo sed -i "0,/^[ \t]*export BACKUP_WRITER_HOSTGROUP_ID[ \t]*=.*$/s|^[ \t]*expo
 sudo sed -i "0,/^[ \t]*export OFFLINE_HOSTGROUP_ID[ \t]*=.*$/s|^[ \t]*export OFFLINE_HOSTGROUP_ID[ \t]*=.*$|export OFFLINE_HOSTGROUP_ID=\"13\"|" /etc/proxysql-admin.cnf
 
 if [[ $RUN_TEST -eq 1 ]]; then
+
+  if [ -e "/dummypathnonexisting/.mylogin.cnf" ]; then
+    error "" "/dummypathnonexisting/.mylogin.cnf found. This should not happen.";
+    exit 1
+  fi
+  export MYSQL_TEST_LOGIN_FILE="/dummypathnonexisting/.mylogin.cnf"
+
+  echo ""
+  echo "================================================================"
+  echo "Initializing the login-path files"
+
+  mkdir -p "$SCRIPT_DIR/test.tmp.d"
+
+  export MYSQL_TEST_LOGIN_FILE="$SCRIPT_DIR/test.tmp.d/mylogin.cnf"
+  echo "setting $MYSQL_TEST_LOGIN_FILE to be the default" >&2
+
+  sudo rm -f "$MYSQL_TEST_LOGIN_FILE"
+  echo "removing $MYSQL_TEST_LOGIN_FILE" >&2
+
+  # configure all the login-paths
+  echo "adding proxysql login path to mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set  env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=proxysql --host=localhost --port=6032 --user=admin --password
+    expect -nocase \"Enter password:\" {send \"admin\r\"; interact}
+  "
+
+  echo "adding cluster login path to mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set  env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=cluster --host=localhost --port=4110 --user=admin --password
+    expect -nocase \"Enter password:\" {send \"admin\r\"; interact}
+  "
+
+  echo "adding monitor login path to mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=monitor --user=monitor --password
+    expect -nocase \"Enter password:\" {send \"monitor\r\"; interact}
+  "
+
+  echo "adding cluster-app login path to mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=cluster-app --user=cluster_one --password
+    expect -nocase \"Enter password:\" {send \"passw0rd\r\"; interact}
+  "
+
+  export MYSQL_TEST_LOGIN_FILE="$SCRIPT_DIR/test.tmp.d/bad.mylogin.cnf"
+  echo "setting $MYSQL_TEST_LOGIN_FILE to be the default" >&2
+
+  sudo rm -f "$MYSQL_TEST_LOGIN_FILE"
+  echo "removing $MYSQL_TEST_LOGIN_FILE" >&2
+
+  # configure all the login-paths (all values are invalid)
+  echo "adding proxysql login path to bad.mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=proxysql --host=localhost0 --port=6032 --user=admin0 --password
+    expect -nocase \"Enter password:\" {send \"admin0\r\"; interact}
+  "
+
+  echo "adding cluster login path to bad.mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=cluster --host=localhost0 --port=3306 --user=admin0 --password
+    expect -nocase \"Enter password:\" {send \"admin0\r\"; interact}
+  "
+
+  echo "adding monitor login path to bad.mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=monitor --user=monitor0 --password
+    expect -nocase \"Enter password:\" {send \"monitor0\r\"; interact}
+  "
+
+  echo "adding cluster-app login path to bad.mylogin.cnf" >&2
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=cluster-app --user=proxysql_user0 --password
+    expect -nocase \"Enter password:\" {send \"passw0rd0\r\"; interact}
+  "
+
+  export MYSQL_TEST_LOGIN_FILE="/dummypathnonexisting/.mylogin.cnf"
+
+
   echo ""
   echo "================================================================"
   echo "proxysql-admin generic bats test log"
-  sudo WORKDIR=$WORKDIR TERM=xterm USE_IPVERSION=$USE_IPVERSION \
+  sudo WORKDIR=$WORKDIR SCRIPTDIR=$SCRIPT_DIR TERM=xterm USE_IPVERSION=$USE_IPVERSION \
         bats $SCRIPT_DIR/generic-test.bats
   echo "================================================================"
   echo ""
@@ -617,7 +730,7 @@ if [[ $RUN_TEST -eq 1 ]]; then
     echo "cluster_one : $test_file"
     SECONDS=0
 
-    sudo WORKDIR=$WORKDIR TERM=xterm USE_IPVERSION=$USE_IPVERSION \
+    sudo WORKDIR=$WORKDIR SCRIPTDIR=$SCRIPT_DIR TERM=xterm USE_IPVERSION=$USE_IPVERSION \
           bats $SCRIPT_DIR/$test_file
     rc=$?
     if (( $SECONDS > 60 )) ; then
@@ -688,11 +801,38 @@ echo "================================================================"
 echo ""
 
 if [[ $RUN_TEST -eq 1 ]]; then
+
+  echo ""
+  echo "================================================================"
+  echo "Modifying the login path for cluster two"
+  export MYSQL_TEST_LOGIN_FILE="$SCRIPT_DIR/test.tmp.d/mylogin.cnf"
+  echo "setting $MYSQL_TEST_LOGIN_FILE to be the default" >&2
+
+  echo "modifying cluster login path in mylogin.cnf" >&2
+
+  sudo MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE ${PXC_BASEDIR}/bin/mysql_config_editor remove --login-path=cluster
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set  env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=cluster --host=localhost --port=4210 --user=admin --password
+    expect -nocase \"Enter password:\" {send \"admin\r\"; interact}
+  "
+
+  sudo MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE ${PXC_BASEDIR}/bin/mysql_config_editor remove --login-path=cluster-app
+  sudo unbuffer expect -c "
+    log_user 0
+    global env
+    set env(MYSQL_TEST_LOGIN_FILE) ${MYSQL_TEST_LOGIN_FILE}
+    spawn ${PXC_BASEDIR}/bin/mysql_config_editor set --login-path=cluster-app --user=cluster_two --password
+    expect -nocase \"Enter password:\" {send \"passw0rd\r\"; interact}
+  "
+
   for test_file in ${TEST_SUITES[@]}; do
     echo "cluster_two : $test_file"
     SECONDS=0
 
-    sudo WORKDIR=$WORKDIR TERM=xterm USE_IPVERSION=$USE_IPVERSION \
+    sudo WORKDIR=$WORKDIR SCRIPTDIR=$SCRIPT_DIR TERM=xterm USE_IPVERSION=$USE_IPVERSION \
           bats $SCRIPT_DIR/$test_file
     rc=$?
 

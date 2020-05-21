@@ -49,7 +49,7 @@ fi
 #
 # Script parameters/constants
 #
-readonly    PROXYSQL_ADMIN_VERSION="2.0.7"
+readonly    PROXYSQL_ADMIN_VERSION="2.0.12"
 declare  -i DEBUG=0
 
 # default timeout is 10 seconds
@@ -60,20 +60,26 @@ declare  -i TIMEOUT=10
 #
 declare    CONFIG_FILE="/etc/proxysql-admin.cnf"
 declare    PROXYSQL_DATADIR=""
+declare    MY_PRINT_DEFAULTS=""
+declare    LOGIN_PATH_FILE=""
 
+declare    PROXYSQL_LOGIN_PATH=""
 declare    PROXYSQL_USERNAME=""
 declare    PROXYSQL_PASSWORD=""
 declare    PROXYSQL_PORT=""
 declare    PROXYSQL_HOSTNAME=""
 
+declare    CLUSTER_LOGIN_PATH=""
 declare    CLUSTER_USERNAME=""
 declare    CLUSTER_PASSWORD=""
 declare    CLUSTER_HOSTNAME=""
 declare    CLUSTER_PORT=""
 
+declare    CLUSTER_APP_LOGIN_PATH=""
 declare    CLUSTER_APP_USERNAME=""
 declare    CLUSTER_APP_PASSWORD=""
 
+declare    MONITOR_LOGIN_PATH=""
 declare    MONITOR_USERNAME=""
 declare    MONITOR_PASSWORD=""
 
@@ -223,20 +229,24 @@ Options:
                                      assigned to this hostgroup.
 
   --proxysql-datadir=<datadir>       Specify the proxysql data directory location
+  --proxysql-login-path=<login>      ProxySQL service login path
   --proxysql-username=<user_name>    ProxySQL service username
   --proxysql-password[=<password>]   ProxySQL service password
   --proxysql-port=<port_num>         ProxySQL service port number
   --proxysql-hostname=<host_name>    ProxySQL service hostname
 
+  --cluster-login-path=<login>       Percona XtraDB Cluster node login path
   --cluster-username=<user_name>     Percona XtraDB Cluster node username
   --cluster-password[=<password>]    Percona XtraDB Cluster node password
   --cluster-port=<port_num>          Percona XtraDB Cluster node port number
   --cluster-hostname=<host_name>     Percona XtraDB Cluster node hostname
 
+  --cluster-app-login-path=<login>   Percona XtraDB Cluster node application login path
   --cluster-app-username=<user_name> Percona XtraDB Cluster node application username
   --cluster-app-password[=<password>] Percona XtraDB Cluster node application passwrod
   --without-cluster-app-user         Configure Percona XtraDB Cluster without application user
 
+  --monitor-login-path=<login>       Login path for monitoring Percona XtraDB Cluster node through ProxySQL
   --monitor-username=<user_name>     Username for monitoring Percona XtraDB Cluster nodes through ProxySQL
   --monitor-password[=<password>]    Password for monitoring Percona XtraDB Cluster nodes through ProxySQL
   --use-existing-monitor-password    Do not prompt for a new monitor password if one is provided.
@@ -285,6 +295,8 @@ Options:
                                      admin variable settings.  If this option is specifed,
                                      these options will be set to false.
                                      (default: updates are not disabled)
+  --login-path-file=<PATH>           Specify the file to use for login-path information.
+                                     (default: ~/.mylogin.cnf)
   --debug                            Enables additional debug logging.
   --help                             Dispalys this help text.
 
@@ -2662,6 +2674,302 @@ function report_status()
   echo ""
 }
 
+
+# Retrieves the data from the section in the login-path
+#
+# Globals:
+#   MY_PRINT_DEFAULTS
+#
+# Arguments:
+#   Parameter 1 : the section name (example: 'client')
+#
+# Outputs:
+#   Echoes the data for the section (newline separated)
+#
+function get_login_path_data()
+{
+  local group="$1"
+  local reval=""
+
+  reval=$($MY_PRINT_DEFAULTS -s "${group}")
+  echo "${reval}"
+}
+
+# Extracts the value from a "name=value" line
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   Parameter 1 : the data (captured from my_print_defaults)
+#   Parameter 2 : the variable to be extracted
+#
+# Output:
+#   Echoes the value portion
+#
+function extract_value()
+{
+  local data=$1
+  local name=$2
+  local reval=""
+
+  # normalize the variable name by replacing all '_' with '-'
+  name=${name//_/-}
+
+  reval=$(echo "$data" | awk -F= '{st=index($0,"="); cur=$0; if ($1 ~ /_/) { gsub(/_/,"-",$1);} if (st != 0) { print $1"="substr(cur,st+1) } else { print cur }}' | grep -- "--$name=" | cut -d= -f2- | tail -1)
+  echo "${reval}"
+}
+
+# Checks that the given login path exists
+# (also checks that we can use my_print_defaults)
+#
+# Globals:
+#   MY_PRINT_DEFAULTS
+#
+# Arguments:
+#   Parameter 1 : the login path name (example: 'client')
+#
+# Return:
+#   Returns 1 if there is no matching login path
+#   Else returns 0 if there is a login path (with values)
+#
+function check_login_path()
+{
+  local login_path="$1"
+  local value
+
+  # Can we access my_print_defaults
+  if [[ -z $MY_PRINT_DEFAULTS ]]; then
+    error "$LINENO" "my_print_defaults not found"
+    exit 1
+  fi
+
+  if [[ -z $login_path ]]; then
+    error "$LINENO" "Script error: login_path parameter is empty"
+    exit 1
+  fi
+
+  # Check the login path
+  value=$($MY_PRINT_DEFAULTS -s $login_path)
+  [[ -z $value ]] && return 1
+  return 0
+}
+
+# Loads the ProxySQL admin credentials from the proxysql login path
+#
+# Globals:
+#   MY_PRINT_DEFAULTS
+#   PROXYSQL_USERNAME (sets the value)
+#   PROXYSQL_PASSWORD (sets the value)
+#   PROXYSQL_HOSTNAME (sets the value)
+#   PROXYSQL_PORT (sets the value)
+#
+# Parameters:
+#   Argument 1 : the login path
+#
+function load_proxysql_login_path()
+{
+  local login_path="$1"
+
+  # Read in the data from the login path
+  if [[ -z $MY_PRINT_DEFAULTS ]]; then
+    # look for my_print_defaults
+    MY_PRINT_DEFAULTS=$(which my_print_defaults)
+    if [[ -z $MY_PRINT_DEFAULTS ]]; then
+      error "$LINENO" "Could not find the my_print_defaults executable in the path." \
+                    "\n-- Please check that it is installed and in the path."
+      exit 1
+    fi
+  fi
+
+  # Check to see if the login path exists (error out if non-existent)
+  if ! check_login_path "$login_path"; then
+    error "$LINENO" "Could not find the ${login_path} login path." \
+                  "\n-- Please check that it is has been created."
+    exit 1
+  fi
+
+  debug "$LINENO" "Using the login path:$login_path for ProxySQL access"
+
+  # Clear all previous values
+  PROXYSQL_USERNAME=""
+  PROXYSQL_PASSWORD=""
+  PROXYSQL_HOSTNAME=""
+  PROXYSQL_PORT=""
+
+  # Extract the values
+  data=$(get_login_path_data "${login_path}")
+  PROXYSQL_USERNAME=$(extract_value "$data" "user")
+  if [[ -z $PROXYSQL_USERNAME ]]; then
+    error "$LINENO" "Could not find 'user' in the ${login_path} login path." \
+                  "\n-- Please check that it is specified in the login path."
+    exit 1
+  fi
+
+  PROXYSQL_PASSWORD=$(extract_value "${data}" "password")
+  PROXYSQL_HOSTNAME=$(extract_value "${data}" "host")
+  PROXYSQL_PORT=$(extract_value "${data}" "port")
+}
+
+
+# Loads the PXC admin credentials from the proxysql login path
+#
+# Globals:
+#   MY_PRINT_DEFAULTS
+#   CLUSTER_USERNAME (sets the value)
+#   CLUSTER_PASSWORD (sets the value)
+#   CLUSTER_HOSTNAME (sets the value)
+#   CLUSTER_PORT (sets the value)
+#
+# Parameters:
+#   Argument 1 : the login path
+#
+function load_cluster_login_path()
+{
+  local login_path="$1"
+  local data
+
+  if [[ -z $MY_PRINT_DEFAULTS ]]; then
+    # look for my_print_defaults
+    MY_PRINT_DEFAULTS=$(which my_print_defaults)
+    if [[ -z $MY_PRINT_DEFAULTS ]]; then
+      error "$LINENO" "Could not find the my_print_defaults executable in the path." \
+                    "\n-- Please check that it is installed and in the path."
+      exit 1
+    fi
+  fi
+
+  # Check to see if the login path exists (error out if non-existent)
+  if ! check_login_path "$login_path"; then
+    error "$LINENO" "Could not find the ${login_path} login path." \
+                  "\n-- Please check that it is has been created."
+    exit 1
+  fi
+
+  # Clear all previous values
+  CLUSTER_USERNAME=""
+  CLUSTER_PASSWORD=""
+  CLUSTER_HOSTNAME=""
+  CLUSTER_PORT=""
+
+  debug "$LINENO" "Using the login path:$login_path for PXC access"
+
+  # Extract the values
+  data=$(get_login_path_data "${login_path}")
+  CLUSTER_USERNAME=$(extract_value "${data}" "user")
+  if [[ -z $CLUSTER_USERNAME ]]; then
+    error "$LINENO" "Could not find 'user' in the ${login_path} login path." \
+                  "\n-- Please check that it is specified in the login path."
+    exit 1
+  fi
+
+  CLUSTER_PASSWORD=$(extract_value "${data}" "password")
+  CLUSTER_HOSTNAME=$(extract_value "${data}" "host")
+  CLUSTER_PORT=$(extract_value "${data}" "port")
+}
+
+
+# Loads the PXC monitoring credentials from the proxysql login path
+#
+# Globals:
+#   MY_PRINT_DEFAULTS
+#   MONITOR_USERNAME (sets the value)
+#   MONITOR_PASSWORD (sets the value)
+#
+# Parameters:
+#   Argument 1 : the login path
+#
+function load_monitor_login_path()
+{
+  local login_path="$1"
+  local data
+
+  if [[ -z $MY_PRINT_DEFAULTS ]]; then
+    # look for my_print_defaults
+    MY_PRINT_DEFAULTS=$(which my_print_defaults)
+    if [[ -z $MY_PRINT_DEFAULTS ]]; then
+      error "$LINENO" "Could not find the my_print_defaults executable in the path." \
+                    "\n-- Please check that it is installed and in the path."
+      exit 1
+    fi
+  fi
+
+  # Check to see if the login path exists (error out if non-existent)
+  if ! check_login_path "$login_path"; then
+    error "$LINENO" "Could not find the ${login_path} login path." \
+                  "\n-- Please check that it is has been created."
+    exit 1
+  fi
+
+  # Clear all previous values
+  MONITOR_USERNAME=""
+  MONITOR_PASSWORD=""
+
+  debug "$LINENO" "Using the login path:$login_path for PXC monitoring access"
+
+  # Extract the values
+  data=$(get_login_path_data "${login_path}")
+  MONITOR_USERNAME=$(extract_value "${data}" "user")
+  if [[ -z $MONITOR_USERNAME ]]; then
+    error "$LINENO" "Could not find 'user' in the ${login_path} login path." \
+                  "\n-- Please check that it is specified in the login path."
+    exit 1
+  fi
+
+  MONITOR_PASSWORD=$(extract_value "${data}" "password")
+}
+
+
+# Loads the PXC cluster app credentials from the proxysql login path
+#
+# Globals:
+#   MY_PRINT_DEFAULTS
+#   CLUSTER_APP_USERNAME (sets the value)
+#   CLUSTER_APP_PASSWORD (sets the value)
+#
+# Parameters:
+#   Argument 1 : the login path
+#
+function load_cluster_app_login_path()
+{
+  local login_path="$1"
+  local data
+
+  if [[ -z $MY_PRINT_DEFAULTS ]]; then
+    # look for my_print_defaults
+    MY_PRINT_DEFAULTS=$(which my_print_defaults)
+    if [[ -z $MY_PRINT_DEFAULTS ]]; then
+      error "$LINENO" "Could not find the my_print_defaults executable in the path." \
+                    "\n-- Please check that it is installed and in the path."
+      exit 1
+    fi
+  fi
+  # Check to see if the login path exists (error out if non-existent)
+  if ! check_login_path "$login_path"; then
+    error "$LINENO" "Could not find the ${login_path} login path." \
+                  "\n-- Please check that it is has been created."
+    exit 1
+  fi
+
+  # Clear all previous values
+  CLUSTER_APP_USERNAME=""
+  CLUSTER_APP_PASSWORD=""
+
+  debug "$LINENO" "Using the login path:$login_path for PXC app access"
+
+  # Extract the values
+  data=$(get_login_path_data "${login_path}")
+  CLUSTER_APP_USERNAME=$(extract_value "${data}" "user")
+  if [[ -z $CLUSTER_APP_USERNAME ]]; then
+    error "$LINENO" "Could not find 'user' in the ${login_path} login path." \
+                  "\n-- Please check that it is specified in the login path."
+    exit 1
+  fi
+
+  CLUSTER_APP_PASSWORD=$(extract_value "${data}" "password")
+}
+
+
 # Tests if a string is an integer
 # (checks if made up of digits with an optional minus sign)
 #
@@ -2687,6 +2995,7 @@ function is_integer()
 # Parses the script arguments and sets the global variables
 #
 # Globals:
+#   LOGIN_PATH_FILE
 #
 # Arguments:
 #   The arguments to the script.
@@ -2697,7 +3006,7 @@ function parse_args() {
   # TODO: kennt, what happens if we don't have a functional getopt()?
   # Check if we have a functional getopt(1)
   if ! getopt --test; then
-    go_out="$(getopt --options=edv --longoptions=config-file:,proxysql-datadir:,writer-hg:,backup-writer-hg:,reader-hg:,offline-hg:,proxysql-username:,proxysql-password::,proxysql-hostname:,proxysql-port:,cluster-username:,cluster-password::,cluster-hostname:,cluster-port:,monitor-username:,monitor-password:,cluster-app-username:,cluster-app-password:,node-check-interval:,quick-demo,mode:,write-node:,use-existing-monitor-password,without-cluster-app-user,enable,disable,update-cluster,is-enabled,adduser,syncusers,sync-multi-cluster-users,update-mysql-version,add-query-rule,status,max-connections:,max-transactions-behind:,use-ssl:,writers-are-readers:,remove-all-servers,disable-updates,force,version,debug,help \
+    go_out="$(getopt --options=edv --longoptions=config-file:,proxysql-datadir:,writer-hg:,backup-writer-hg:,reader-hg:,offline-hg:,proxysql-login-path:,proxysql-username:,proxysql-password::,proxysql-hostname:,proxysql-port:,cluster-login-path:,cluster-username:,cluster-password::,cluster-hostname:,cluster-port:,monitor-login-path:,monitor-username:,monitor-password:,cluster-app-login-path:,cluster-app-username:,cluster-app-password:,node-check-interval:,quick-demo,mode:,write-node:,use-existing-monitor-password,without-cluster-app-user,enable,disable,update-cluster,is-enabled,adduser,syncusers,sync-multi-cluster-users,update-mysql-version,add-query-rule,status,max-connections:,max-transactions-behind:,use-ssl:,writers-are-readers:,remove-all-servers,disable-updates,force,login-path-file:,version,debug,help \
     --name="$(basename "$0")" -- "$@")"
     check_cmd $? "$LINENO" "Script error: getopt() failed with arguments: $*"
     eval set -- "$go_out"
@@ -2713,14 +3022,23 @@ function parse_args() {
   # (2) to handle options that need to be done before other
   #     options, such as loading the config file
   #
-  for arg
+
+  while [[ $# -gt 0 ]];
   do
+    arg="$1"
     case "$arg" in
-      -- ) shift; break;;
-      --config-file )
+      --) shift; break;;
+      --config-file)
         CONFIG_FILE="$2"
         check_permission -e "$LINENO" "$CONFIG_FILE" "proxysql-admin configuration file"
         debug "$LINENO"  "--config-file specified, using : $CONFIG_FILE"
+        shift 2
+        ;;
+      --login-path-file)
+        LOGIN_PATH_FILE="$2"
+        check_permission -e "$LINENO" "$LOGIN_PATH_FILE" "login-path file"
+        check_permission -r "$LINENO" "$LOGIN_PATH_FILE" "login-path file"
+        debug "$LINENO"  "--login-path-file specified, using : $LOGIN_PATH_FILE"
         shift 2
         ;;
       --help)
@@ -2756,9 +3074,6 @@ function parse_args() {
     esac
   done
 
-  # Reset the command line for the next invocation
-  eval set -- "$go_out"
-
   #
   # Load the config file before reading in the command-line options
   #
@@ -2773,11 +3088,28 @@ function parse_args() {
     fi
   fi
 
+  # Use the specified LOGIN_PATH_FILE to find the login paths
+  if [[ -n $LOGIN_PATH_FILE ]]; then
+    export MYSQL_TEST_LOGIN_FILE="$LOGIN_PATH_FILE"
+  fi
+
+  # Load the data if any of the login-path values have been set
+  # in the config file. Do this here, so that the command-line
+  # options can override the login path settings
+  [[ -n $PROXYSQL_LOGIN_PATH ]] && load_proxysql_login_path "$PROXYSQL_LOGIN_PATH"
+  [[ -n $CLUSTER_LOGIN_PATH ]] && load_cluster_login_path "$CLUSTER_LOGIN_PATH"
+  [[ -n $MONITOR_LOGIN_PATH ]] && load_monitor_login_path "$MONITOR_LOGIN_PATH"
+  [[ -n $CLUSTER_APP_LOGIN_PATH ]] && load_cluster_app_login_path "$CLUSTER_APP_LOGIN_PATH"
+
+  # Reset the command line for the next invocation
+  eval set -- "$go_out"
+
   #
   # Iterate through the comamnd-line options
   #
-  for arg
+  while [[ $# -gt 0 ]];
   do
+    arg="$1"
     case "$arg" in
       -- ) shift; break;;
       --config-file )
@@ -2785,9 +3117,24 @@ function parse_args() {
         # before this loop (see above)
         shift 2
         ;;
+      --login-path-file )
+        # Do no processing of login-path-file here, it is processed
+        # before this loop (see above)
+        shift 2
+        ;;
       --proxysql-datadir )
         PROXYSQL_DATADIR="$2"
         shift 2
+        ;;
+      --proxysql-login-path )
+        PROXYSQL_LOGIN_PATH="$2"
+        if [[ -z $PROXYSQL_LOGIN_PATH ]]; then
+          error "$LINENO" "Missing ProxySQL uses_login path value"
+          exit 1
+        fi
+        shift 2
+
+        load_proxysql_login_path "$PROXYSQL_LOGIN_PATH"
         ;;
       --proxysql-username )
         PROXYSQL_USERNAME="$2"
@@ -2819,6 +3166,16 @@ function parse_args() {
         PROXYSQL_PORT="$2"
         shift 2
         ;;
+      --cluster-login-path )
+        CLUSTER_LOGIN_PATH="$2"
+        if [[ -z $CLUSTER_LOGIN_PATH ]]; then
+          error "$LINENO" "Missing PXC cluster admin login path value"
+          exit 1
+        fi
+        shift 2
+
+        load_cluster_login_path "${CLUSTER_LOGIN_PATH}"
+        ;;
       --cluster-username )
         CLUSTER_USERNAME="$2"
         shift 2
@@ -2849,6 +3206,16 @@ function parse_args() {
         CLUSTER_PORT="$2"
         shift 2
         ;;
+      --monitor-login-path )
+        MONITOR_LOGIN_PATH="$2"
+        if [[ -z $MONITOR_LOGIN_PATH ]]; then
+          error "$LINENO" "Missing PXC monitor login path value"
+          exit 1
+        fi
+        shift 2
+
+        load_monitor_login_path "${MONITOR_LOGIN_PATH}"
+        ;;
       --monitor-username )
         MONITOR_USERNAME="$2"
         shift 2
@@ -2860,6 +3227,16 @@ function parse_args() {
       --use-existing-monitor-password )
         USE_EXISTING_MONITOR_PASSWORD=1
         shift
+        ;;
+      --cluster-app-login-path )
+        CLUSTER_APP_LOGIN_PATH="$2"
+        if [[ -z $CLUSTER_APP_LOGIN_PATH ]]; then
+          error "$LINENO" "Missing PXC app login path value"
+          exit 1
+        fi
+        shift 2
+
+        load_cluster_app_login_path "${CLUSTER_APP_LOGIN_PATH}"
         ;;
       --cluster-app-username )
         CLUSTER_APP_USERNAME="$2"
@@ -3031,6 +3408,11 @@ function parse_args() {
     esac
   done
 
+  # Clear this to avoid having mysql client errors. We should have
+  # extracted all credential information by this point.
+  unset MYSQL_TEST_LOGIN_FILE
+
+
   # WRITE_NODE validity check (check to see if the port is included)
   if [[ -n $WRITE_NODE ]]; then
     if [[ $WRITE_NODE =~ , ]]; then
@@ -3178,7 +3560,7 @@ function parse_args() {
    # Check the options gathered from the command line
   if [[ $QUICK_DEMO -eq 0 ]]; then
     if [[ -z "$PROXYSQL_USERNAME" ]];then
-      error "" "The ProxySQL username (--proxysql-username) is required!"
+      error "$LINENO" "The ProxySQL username (--proxysql-username) is required!"
       exit 1
     fi
 
@@ -3658,14 +4040,6 @@ function restore_updates()
 # Step 4 : Begin script execution
 #
 
-# Internal variables
-if [ -e "/dummypathnonexisting/.mylogin.cnf" ]; then
-  error "" "/dummypathnonexisting/.mylogin.cnf found. This should not happen.";
-  exit 1
-else
-  export HOME="/dummypathnonexisting"
-fi
-
 
 function on_exit()
 {
@@ -3691,6 +4065,17 @@ if [[ $? -ne 0 ]]; then
 fi
 
 parse_args "$@"
+
+# Set the default login path to point to a non-existent file
+# This is to avoid having any login path settings interfere with the
+# mysql client connections.
+if [ -e "/dummypathnonexisting/.mylogin.cnf" ]; then
+  error "" "/dummypathnonexisting/.mylogin.cnf found. This should not happen.";
+  exit 1
+else
+  export MYSQL_TEST_LOGIN_FILE="/dummypathnonexisting/.mylogin.cnf"
+fi
+
 
 # We now use the tables for configuration and thus they should reflect
 # the current state before we do any modification.

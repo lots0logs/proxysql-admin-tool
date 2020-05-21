@@ -9,8 +9,8 @@ export PROXYSQL_DATADIR='/var/lib/proxysql'
 # parameters will be ignored.
 export PROXYSQL_LOGIN_PATH=""
 
-export PROXYSQL_USERNAME="admin"
-export PROXYSQL_PASSWORD="admin"
+export PROXYSQL_USERNAME="badadmin"
+export PROXYSQL_PASSWORD="badadmin"
 export PROXYSQL_HOSTNAME='localhost'
 export PROXYSQL_PORT='6032'
 
@@ -22,8 +22,8 @@ export PROXYSQL_PORT='6032'
 # parameters will be ignored.
 export CLUSTER_LOGIN_PATH=""
 
-export CLUSTER_USERNAME='admin'
-export CLUSTER_PASSWORD='admin'
+export CLUSTER_USERNAME='badadmin'
+export CLUSTER_PASSWORD='badadmin'
 export CLUSTER_HOSTNAME='localhost'
 export CLUSTER_PORT='3306'
 
@@ -36,8 +36,8 @@ export CLUSTER_PORT='3306'
 # then all other monitor connection parameters will be ignored.
 export MONITOR_LOGIN_PATH=""
 
-export MONITOR_USERNAME='monitor'
-export MONITOR_PASSWORD='monitor'
+export MONITOR_USERNAME='badmonitor'
+export MONITOR_PASSWORD='badmonitor'
 
 # --------------------------------
 # Application user to connect to pxc-node through proxysql
@@ -47,8 +47,8 @@ export MONITOR_PASSWORD='monitor'
 # parameters will be ignored.
 export CLUSTER_APP_LOGIN_PATH=""
 
-export CLUSTER_APP_USERNAME='proxysql_user'
-export CLUSTER_APP_PASSWORD='passw0rd'
+export CLUSTER_APP_USERNAME='badproxysql_user'
+export CLUSTER_APP_PASSWORD='badpassw0rd'
 
 # --------------------------------
 # ProxySQL hostgroup IDs

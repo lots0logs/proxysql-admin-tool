@@ -26,20 +26,24 @@ Options:
                                      assigned to this hostgroup.
 
   --proxysql-datadir=<datadir>       Specify the proxysql data directory location
+  --proxysql-login-path=<path_name>  Specify the ProxySQL login path.
   --proxysql-username=<user_name>    ProxySQL service username
   --proxysql-password[=<password>]   ProxySQL service password
   --proxysql-port=<port_num>         ProxySQL service port number
   --proxysql-hostname=<host_name>    ProxySQL service hostname
 
+  --cluster-login-path=<path_name>   Specify the PXC cluster admin login path
   --cluster-username=<user_name>     Percona XtraDB Cluster node username
   --cluster-password[=<password>]    Percona XtraDB Cluster node password
   --cluster-port=<port_num>          Percona XtraDB Cluster node port number
   --cluster-hostname=<host_name>     Percona XtraDB Cluster node hostname
 
+  --cluster-app-login-path=<name>    Specify the PXC node application login path
   --cluster-app-username=<user_name> Percona XtraDB Cluster node application username
   --cluster-app-password[=<password>] Percona XtraDB Cluster node application passwrod
   --without-cluster-app-user         Configure Percona XtraDB Cluster without application user
 
+  --monitor-login-path=<path_name>   Specify the PXC monitor login path
   --monitor-username=<user_name>     Username for monitoring Percona XtraDB Cluster nodes through ProxySQL
   --monitor-password[=<password>]    Password for monitoring Percona XtraDB Cluster nodes through ProxySQL
   --use-existing-monitor-password    Do not prompt for a new monitor password if one is provided.
@@ -88,6 +92,7 @@ Options:
                                      admin variable settings.  If this option is specifed,
                                      these options will be set to false.
                                      (default: updates are not disabled)
+  --login-path-file=<path>           Specify the file to use for login-path information.
   --debug                            Enables additional debug logging.
   --help                             Dispalys this help text.
 

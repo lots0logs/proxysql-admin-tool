@@ -7,12 +7,7 @@ export PROXYSQL_DATADIR='/var/lib/proxysql'
 # This is the login path that will be used to connect to
 # ProxySQL.  If this is set, then all other ProxySQL connection
 # parameters will be ignored.
-export PROXYSQL_LOGIN_PATH=""
-
-export PROXYSQL_USERNAME="admin"
-export PROXYSQL_PASSWORD="admin"
-export PROXYSQL_HOSTNAME='localhost'
-export PROXYSQL_PORT='6032'
+export PROXYSQL_LOGIN_PATH="proxysql"
 
 # --------------------------------
 # PXC admin credentials for connecting to pxc-cluster-node.
@@ -20,12 +15,7 @@ export PROXYSQL_PORT='6032'
 # This is the login path that will be used to connect to
 # the cluster.  If this is set, then all other cluster connection
 # parameters will be ignored.
-export CLUSTER_LOGIN_PATH=""
-
-export CLUSTER_USERNAME='admin'
-export CLUSTER_PASSWORD='admin'
-export CLUSTER_HOSTNAME='localhost'
-export CLUSTER_PORT='3306'
+export CLUSTER_LOGIN_PATH="cluster"
 
 # --------------------------------
 # proxysql monitoring user. proxysql admin script will create
@@ -34,10 +24,7 @@ export CLUSTER_PORT='3306'
 # This is the login path that will be used to connect to
 # cluster nodes (for monitoring purposes)..  If this is set,
 # then all other monitor connection parameters will be ignored.
-export MONITOR_LOGIN_PATH=""
-
-export MONITOR_USERNAME='monitor'
-export MONITOR_PASSWORD='monitor'
+export MONITOR_LOGIN_PATH="monitor"
 
 # --------------------------------
 # Application user to connect to pxc-node through proxysql
@@ -45,17 +32,14 @@ export MONITOR_PASSWORD='monitor'
 # This is the login path that will be used to connect to
 # the cluster.  If this is set, then all other cluster connection
 # parameters will be ignored.
-export CLUSTER_APP_LOGIN_PATH=""
-
-export CLUSTER_APP_USERNAME='proxysql_user'
-export CLUSTER_APP_PASSWORD='passw0rd'
+export CLUSTER_APP_LOGIN_PATH="cluster-app"
 
 # --------------------------------
 # ProxySQL hostgroup IDs
-export WRITER_HOSTGROUP_ID='10'
-export READER_HOSTGROUP_ID='11'
-export BACKUP_WRITER_HOSTGROUP_ID='12'
-export OFFLINE_HOSTGROUP_ID='13'
+export WRITER_HOSTGROUP_ID='20'
+export READER_HOSTGROUP_ID='21'
+export BACKUP_WRITER_HOSTGROUP_ID='22'
+export OFFLINE_HOSTGROUP_ID='23'
 
 # --------------------------------
 # ProxySQL read/write configuration mode.

@@ -122,6 +122,7 @@ fi
 
 
 @test "run proxysql-admin --update-mysql-version ($WSREP_CLUSTER_NAME)" {
+  #skip
 
   local mysql_version=$(mysql_exec "$HOST_IP" "$PORT_3" "SELECT VERSION();" | tail -1 | cut -d'-' -f1)
   local proxysql_mysql_version=$(proxysql_exec "select variable_value from global_variables where variable_name like 'mysql-server_version'" | awk '{print $0}')
@@ -144,18 +145,24 @@ fi
 }
 
 @test "run the check for --adduser ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   run_add_command=$(printf "proxysql_test_user1\ntest_user\ny" | sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --adduser)
   run_check_user_command=$(proxysql_exec "select 1 from mysql_users where username='proxysql_test_user1'" | awk '{print $0}')
   [ "$run_check_user_command" -eq 1 ]
 }
 
 @test "run proxysql-admin --syncusers ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --syncusers
   echo "$output" >&2
   [ "$status" -eq  0 ]
 }
 
 @test "run proxysql-admin --syncusers --add-query-rule ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   # Check whether user and query rule exists in  ProxySQL DB
   run_check_user=$(proxysql_exec "select 1 from mysql_users where username='test_query_rule'" | awk '{print $0}')
   run_query_rule=$(proxysql_exec "select 1 from mysql_query_rules where username='test_query_rule'" | awk '{print $0}')
@@ -189,6 +196,7 @@ fi
 }
 
 @test "run the check for --syncusers ($WSREP_CLUSTER_NAME)" {
+  #skip
 
   local mysql_version=$(cluster_exec "select @@version")
   local pass_field
@@ -214,6 +222,7 @@ fi
 
 @test "run the check for --quick-demo ($WSREP_CLUSTER_NAME)" {
   #skip
+
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin  --enable \
       --writer-hg=10 --reader-hg=11 --backup-writer-hg=12 \
       --offline-hg=13 --quick-demo <<< n
@@ -223,6 +232,8 @@ fi
 }
 
 @test "run the check for --force ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   # Cleaning existing configuration to test --force option as normal run
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin  --enable --force <<< n
@@ -300,6 +311,8 @@ fi
 
 
 @test "test for various parameter settings ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --enable \
     --max-connections=111 \
@@ -346,6 +359,7 @@ fi
 
 
 @test "test for --writers-are-readers ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # -----------------------------------------------------------
@@ -452,6 +466,8 @@ fi
 
 
 @test "test for --writers-are-readers with a read-only node ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # -----------------------------------------------------------
@@ -476,6 +492,7 @@ fi
   [ "$status" -eq 0 ]
   echo "$LINENO : proxysql-admin --enable --writers-are-readers=yes" >&2
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --enable --writers-are-readers=yes <<< 'n'
+  echo "$output" >&2
   [ "$status" -eq 0 ]
   sleep 5
 
@@ -545,6 +562,7 @@ fi
 
 # Test loadbal
 @test "test for --mode=loadbal ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   echo "$LINENO : proxysql-admin --enable --mode=loadbal" >&2
@@ -618,6 +636,7 @@ fi
 
 # Test loadbal with a read-only node
 @test "test for --mode=loadbal with a read-only node ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # -----------------------------------------------------------
@@ -658,6 +677,7 @@ fi
 
 # Test singlewrite with --write-node
 @test "test for --write-node ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # -----------------------------------------------------------
@@ -699,6 +719,7 @@ fi
 
 # Test singlewrite with --write-node is a read-only node
 @test "test for --write-node on a read-only node ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # -----------------------------------------------------------
@@ -723,6 +744,7 @@ fi
 
 # Test --update-cluster
 @test "test --update-cluster ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # Stop node3
@@ -766,11 +788,19 @@ fi
   restart_server "$restart_cmd3" "$restart_user3"
   wait_for_server_start $pxc_socket3 3
 
+  sleep 10
+
+  dump_runtime_nodes "$LINENO" "after cluster update (runtime)"
+
   # Run --update-cluster
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --update-cluster
   echo "$LINENO : proxysql-admin --update-cluster" >&2
   echo "$output" >& 2
   [ "$status" -eq 0 ]
+
+  sleep 10
+
+  dump_runtime_nodes "$LINENO" "after cluster update (runtime)"
 
   # writer count
   proxysql_cluster_count=$(proxysql_exec "select count(*) from runtime_mysql_servers where hostgroup_id = $WRITER_HOSTGROUP_ID " | awk '{print $0}')
@@ -790,6 +820,8 @@ fi
 }
 
 @test "run --update-cluster with read-only --write-node server ($WSREP_CLUSTER_NAME)" {
+  #skip
+
   # Run --update-cluster with read-only --write-node server
   echo "$LINENO : changing node2 to read-only" >&2
   mysql_exec "$HOST_IP" "$PORT_2" "SET global read_only=1"
@@ -812,6 +844,7 @@ fi
 
 # Test --enable --update-cluster
 @test "test --enable --update-cluster ($WSREP_CLUSTER_NAME)" {
+  #skip
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --disable
 
   # Stop node3
@@ -862,11 +895,15 @@ fi
   restart_server "$restart_cmd3" "$restart_user3"
   wait_for_server_start $pxc_socket3 3
 
+  sleep 10
+
   # Run --update-cluster
   run sudo PATH=$WORKDIR:$PATH $WORKDIR/proxysql-admin --enable --update-cluster
   echo "$LINENO : proxysql-admin --update-cluster" >&2
   echo "$output" >& 2
   [ "$status" -eq 0 ]
+
+  sleep 10
 
   # There should be an entry for this cluster
   cluster_in_use=$(proxysql_exec "select count(*) from runtime_mysql_galera_hostgroups where writer_hostgroup = $WRITER_HOSTGROUP_ID")
@@ -887,4 +924,89 @@ fi
   echo "$LINENO : backup writer count:$proxysql_cluster_count expected:2"  >&2
   [ "$proxysql_cluster_count" -eq 2 ]
   
+}
+
+# Test --enable with login-psth
+@test "test --enable with login-path ($WSREP_CLUSTER_NAME)" {
+  #skip
+
+  if [[ $WSREP_CLUSTER_NAME == "cluster_one" ]]; then
+    config_file="${SCRIPTDIR}/login-path-test.cnf"
+    bad_config_file="${SCRIPTDIR}/bad-login-path-test.cnf"
+  else
+    config_file="${SCRIPTDIR}/login-path-test2.cnf"
+    bad_config_file="${SCRIPTDIR}/bad-login-path-test2.cnf"
+  fi
+
+  echo "$LINENO : proxysql-admin --disable" >&2
+  export MYSQL_TEST_LOGIN_FILE="/dummypathnonexisting/.mylogin.cnf"
+  run sudo PATH=$WORKDIR:$PATH \
+           $WORKDIR/proxysql-admin --disable
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
+  # --------------------------------
+  # Test that it works with a default login-path file
+  export MYSQL_TEST_LOGIN_FILE="$SCRIPTDIR/test.tmp.d/mylogin.cnf"
+  echo "$LINENO : setting $MYSQL_TEST_LOGIN_FILE to be the default" >&2
+
+  echo "$LINENO : proxysql-admin --enable" >&2
+  run sudo PATH=$WORKDIR:$PATH MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE \
+      $WORKDIR/proxysql-admin --enable --config-file="${config_file}"  <<< 'n'
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
+  echo "$LINENO : proxysql-admin --disable: >&2"
+  run sudo PATH=$WORKDIR:$PATH MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE \
+      $WORKDIR/proxysql-admin --disable --config-file="${config_file}"
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
+  # --------------------------------
+  # Test that the CLI login-path file overrides the default
+  export MYSQL_TEST_LOGIN_FILE="$SCRIPTDIR/test.tmp.d/bad.mylogin.cnf"
+  echo "$LINENO : setting $MYSQL_TEST_LOGIN_FILE to be the default" >&2
+
+  login_file="$SCRIPTDIR/test.tmp.d/mylogin.cnf"
+
+  echo "$LINENO : proxysql-admin --enable --config-file=$config_file --login-path-file=$login_file" >&2
+  run sudo PATH=$WORKDIR:$PATH MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE \
+      $WORKDIR/proxysql-admin --enable --login-path-file="${login_file}" <<< 'n'
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
+  echo "$LINENO : proxysql-admin --disable: >&2"
+  run sudo PATH=$WORKDIR:$PATH MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE \
+      $WORKDIR/proxysql-admin --disable --config-file="${config_file}" --login-path-file="$login_file"
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
+  # --------------------------------
+  # Test that the CLI args override the login-path file
+  export MYSQL_TEST_LOGIN_FILE="$SCRIPTDIR/test.tmp.d/bad.mylogin.cnf"
+  echo "$LINENO : setting $MYSQL_TEST_LOGIN_FILE to be the default" >&2
+
+  login_file="$SCRIPTDIR/test.tmp.d/bad.mylogin.cnf"
+
+  echo "$LINENO : proxysql-admin --enable --config-file=$config_file --login-path-file=$login_file" >&2
+  run sudo PATH=$WORKDIR:$PATH MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE \
+      $WORKDIR/proxysql-admin --enable --config-file="${bad_config_file}" --login-path-file="${login_file}" \
+      --proxysql-username=admin --proxysql-password=admin --proxysql-hostname=localhost --proxysql-port=6032 \
+      --cluster-username=admin --cluster-password=admin --cluster-hostname=localhost --cluster-port=$PORT_1 \
+      --monitor-username=monitor --monitor-password=monitor \
+      --cluster-app-username=cluster_one --cluster-app-password=passw0rd \
+       <<< 'n'
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
+  echo "$LINENO : proxysql-admin --disable: >&2"
+  run sudo PATH=$WORKDIR:$PATH MYSQL_TEST_LOGIN_FILE=$MYSQL_TEST_LOGIN_FILE \
+      $WORKDIR/proxysql-admin --disable --config-file="${bad_config_file}" --login-path-file="${login_file}" \
+      --proxysql-username=admin --proxysql-password=admin --proxysql-hostname=localhost --proxysql-port=6032 \
+      --cluster-username=admin --cluster-password=admin --cluster-hostname=localhost --cluster-port=$PORT_1 \
+      --monitor-username=monitor --monitor-password=monitor \
+      --cluster-app-username=cluster_one --cluster-app-password=passw0rd \
+  echo "$output" >& 2
+  [ "$status" -eq 0 ]
+
 }
